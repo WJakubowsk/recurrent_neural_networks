@@ -5,17 +5,22 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import seaborn as sns
 from models import Transformer, LSTM
-from dataset import AudioDataset
+from dataset import get_datasets
 from torch.utils.data import DataLoader
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def load_data(root_dir: str):
-    dataset = AudioDataset(root_dir)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-    return dataloader
+def load_data(version: str = "v0.01") -> tuple:
+    """
+    Load the dataset of the desired version and return the dataloaders for every split.
+    """
+    train, val, test = get_datasets(version)
+    train_dataloader = DataLoader(train, batch_size=32, shuffle=True)
+    val_dataloader = DataLoader(val, batch_size=32, shuffle=True)
+    test_dataloader = DataLoader(test, batch_size=32, shuffle=True)
+    return train_dataloader, val_dataloader, test_dataloader
 
 
 def train_model(model_class, model_params, train_loader, val_loader, model_filename):

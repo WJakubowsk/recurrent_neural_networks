@@ -1,3 +1,7 @@
 torch
 pandas
 matplotlib
+seaborn
+datasets
+librosa
+soundfile
