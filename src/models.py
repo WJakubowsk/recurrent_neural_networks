@@ -90,12 +90,13 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class LSTM:
+class LSTM(nn.Module):
     """
     Class for the LSTM model.
     """
 
     def __init__(self, input_size, hidden_size, num_layers, dropout, bidirectional):
+        super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -108,11 +109,11 @@ class LSTM:
                             bidirectional=bidirectional,
                             batch_first=True)
         
-    def parameters(self):
-        """
-        Returns the parameters of the LSTM model.
-        """
-        return self.lstm.parameters()
+    # def parameters(self):
+    #     """
+    #     Returns the parameters of the LSTM model.
+    #     """
+    #     return self.lstm.parameters()
 
     def forward(self, x):
         """
