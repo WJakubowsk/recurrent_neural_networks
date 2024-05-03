@@ -119,8 +119,8 @@ class LSTM(nn.Module):
         """
         Forward pass of the LSTM model.
         """
-        h_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size)
-        c_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size)
+        h_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), self.hidden_size)
+        c_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), self.hidden_size)
         
         out, (h_n, c_n) = self.lstm(x, (h_0, c_0))
         

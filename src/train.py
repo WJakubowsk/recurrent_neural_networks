@@ -7,6 +7,7 @@ import seaborn as sns
 from models import Transformer, LSTM
 from dataset import get_datasets
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,22 +30,26 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     model = model_class(**model_params)
     model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    torch.manual_seed(1000)
 
     # Training loop
     num_epochs = 10
     best_val_accuracy = 0.0
     for epoch in range(num_epochs):
         running_loss = 0.0
+        total_train = 0
+        correct_train = 0
         for i, data in enumerate(train_loader):
             inputs, labels = data["audio"].to(device), data["label"].to(device)
-            print("inputs", inputs.shape)
-            print("labels", labels.shape)
             optimizer.zero_grad()
             outputs = model.forward(inputs)
-            print("outputs", outputs.shape)
             loss = criterion(outputs, labels)
             loss.backward()
+            
+            # Clip gradients to prevent them from becoming too large
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # You can adjust max_norm as needed
+            
             optimizer.step()
             running_loss += loss.item()
 
@@ -68,8 +73,9 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
             save_model(model, "pretrained/" + model_filename + ".pth")
-    return model
 
+    # Return the trained model
+    return model
 
 def save_model(model, path):
     torch.save(model.state_dict(), path)
@@ -81,7 +87,7 @@ def evaluate_model(model, data_loader):
     total = 0
     with torch.no_grad():
         for data in data_loader:
-            inputs, labels = data
+            inputs, labels = data["audio"].to(device), data["label"].to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -146,10 +152,10 @@ if __name__ == "__main__":
     parser.add_argument("--n-head", type=int, default=8)
     parser.add_argument("--d-hid", type=int, default=2048)
     parser.add_argument("--n-layers", type=int, default=6)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--input-size", type=int, default=128)
-    parser.add_argument("--hidden-size", type=int, default=256)
+    parser.add_argument("--dropout", type=float, default=0)
+    parser.add_argument("--input-size", type=int, default=16000)
+    parser.add_argument("--hidden-size", type=int, default=128)
     parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--bidirectional", type=bool, default=True)
+    parser.add_argument("--bidirectional", type=bool, default=False)
     args = parser.parse_args()
     main(args)
