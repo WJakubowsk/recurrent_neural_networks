@@ -1,64 +1,55 @@
 import os
+import numpy as np
+import argparse
 import torch
-import torchaudio
-from torch.utils.data import Dataset
+from datasets import load_dataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def preprocess_wave(waveform, max_length=16000) -> torch.Tensor:
+def preprocess_wave(waveform: np.array, max_length: int = 16000) -> torch.Tensor:
     """
     Preprocesses a waveform by performing feature extraction and normalization.
 
     Args:
-        waveform (Tensor): Input waveform tensor loaded using torchaudio.load().
+        waveform (np.array): Input waveform numpy arrray.
         max_length (int): Maximum length of the waveform. Waveforms will be zero-padded to this length.
 
     Returns:
         Tensor: Preprocessed feature tensor.
     """
-    waveform = torch.nn.functional.pad(waveform, (0, max_length - waveform.size(1)))
-    mean = waveform.mean()
-    std = waveform.std()
-    waveform = (waveform - mean) / std
+    torch_waveform = torch.tensor(waveform, dtype=torch.float32)
+    torch_waveform = torch.nn.functional.pad(torch_waveform, (0, max_length - torch_waveform.size(0)))
+    mean = torch_waveform.mean()
+    std = torch_waveform.std()
+    torch_waveform = (torch_waveform - mean) / std
+    return torch_waveform
 
-    return waveform
+def get_datasets(version: str = "v0.01"):
+    """
+    Unpacks the dataset into train, validation, and test splits of desired version.
+    """
+    dataset = load_dataset("speech_commands", version)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["validation"]
+    test_dataset = dataset["test"]
+    datasets = [train_dataset, val_dataset, test_dataset]
+    new_datasets = []
+    for dataset in datasets:
+        dataset = dataset.map(lambda x: {"audio": preprocess_wave(x["audio"]['array']), "label": 10 if x["label"] >= 10 else x["label"]})
+        dataset.set_format(type="torch", columns=["audio", "label"])
+        new_datasets.append(dataset)
+    return new_datasets
 
+def main(args):
+    train, val, test = get_datasets(args.version)
+    print(f"Number of training samples: {len(train)}")
+    print(f"Number of validation samples: {len(val)}")
+    print(f"Number of test samples: {len(test)}")
+    
 
-class AudioDataset(Dataset):
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
-        self.true_categories = sorted(os.listdir(root_dir))
-        self.classes = sorted(
-            [
-                "yes",
-                "no",
-                "up",
-                "down",
-                "left",
-                "right",
-                "on",
-                "off",
-                "stop",
-                "go",
-                "unknown",
-            ]
-        )  # silence
-
-    def __len__(self):
-        return len(self.classes)
-
-    def __getitem__(self, idx):
-        class_name = self.true_categories[idx]
-        class_dir = os.path.join(self.root_dir, class_name)
-        files = os.listdir(class_dir)
-        file = files[0]  # Assuming each class has at least one file
-        file_path = os.path.join(class_dir, file)
-        waveform, _ = torchaudio.load(file_path)
-        waveform = preprocess_wave(waveform)
-
-        # return idx if it is in the classes else return the index of unknown
-        if class_name in self.classes:
-            return waveform, self.classes.index(class_name)
-        else:
-            return waveform, self.classes.index("unknown")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", type=str, default="v0.01")
+    args = parser.parse_args()
+    main(args)
