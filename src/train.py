@@ -27,6 +27,7 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     # Train the model
     # Initialize model, loss function, and optimizer
     model = model_class(**model_params)
+    model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -36,7 +37,7 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     for epoch in range(num_epochs):
         running_loss = 0.0
         for i, data in enumerate(train_loader):
-            inputs, labels = data
+            inputs, labels = data["audio"].to(device), data["label"].to(device)
             print("inputs", inputs.shape)
             print("labels", labels.shape)
             optimizer.zero_grad()
@@ -89,14 +90,8 @@ def evaluate_model(model, data_loader):
 
 
 def main(args):
-    root_dir = args.root_dir
-    train_loader = load_data(root_dir + "train")
-    test_loader = load_data(root_dir + "test")
-    val_loader = load_data(root_dir + "validation")
-    # if args.model_type == "transformer":
-    #     model = Transformer(
-    #         args.n_tokens, args.d_model, args.n_head, args.d_hid, args.n_layers, args.dropout
-    #     )
+    train_loader, val_loader, test_loader = load_data(args.version)
+
     if args.model_class == "Transformer":
         model = Transformer
         model_params = {
@@ -144,12 +139,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--root-dir",
-        type=str,
-        default="C:/Users/User/Documents/Deep_learning/recurrent_neural_networks/data/",
-    )
     parser.add_argument("--model-class", type=str, choices=["Transformer", "LSTM"], default="Transformer")
+    parser.add_argument("--version", type=str, default="v0.01")
     parser.add_argument("--n-tokens", type=int, default=10)
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--n-head", type=int, default=8)
