@@ -101,9 +101,30 @@ class LSTM:
         self.num_layers = num_layers
         self.dropout = dropout
         self.bidirectional = bidirectional
+        self.lstm = nn.LSTM(input_size=input_size,
+                            hidden_size=hidden_size,
+                            num_layers=num_layers,
+                            dropout=dropout,
+                            bidirectional=bidirectional,
+                            batch_first=True)
+        
+    def parameters(self):
+        """
+        Returns the parameters of the LSTM model.
+        """
+        return self.lstm.parameters()
 
     def forward(self, x):
         """
         Forward pass of the LSTM model.
         """
-        pass
+        h_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size)
+        c_0 = torch.zeros(self.num_layers * (2 if self.bidirectional else 1), x.size(0), self.hidden_size)
+        
+        out, (h_n, c_n) = self.lstm(x, (h_0, c_0))
+        
+        return out
+        
+
+
+        
