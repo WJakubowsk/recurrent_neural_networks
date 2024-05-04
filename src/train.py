@@ -1,5 +1,6 @@
 import argparse
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
@@ -36,8 +37,7 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     model = model_class(**model_params)
     model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
-    torch.manual_seed(1000)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     # Training loop
     num_epochs = 10
@@ -49,14 +49,18 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
         total_train = 0
         correct_train = 0
         for i, data in enumerate(train_loader):
-            inputs, labels = data["audio"].to(device), data["label"].to(device)
+            inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
+
+            # print("inputs", inputs.shape)
+            # print("labels", labels.shape)
             optimizer.zero_grad()
             outputs = model.forward(inputs)
+            # print("outputs", outputs.shape)
             loss = criterion(outputs, labels)
             loss.backward()
             
             # Clip gradients to prevent them from becoming too large
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # You can adjust max_norm as needed
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # You can adjust max_norm as needed
             
             optimizer.step()
             running_loss += loss.item()
@@ -68,7 +72,11 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
 
             if i % 10 == 9:
                 print("[%d, %5d] loss: %.3f" % (epoch + 1, i + 1, running_loss / 10))
+                if running_loss == np.nan or running_loss == float('nan'):
+                    break
                 running_loss = 0.0
+            if running_loss == np.nan or running_loss == float('nan'):
+                break
 
         # Calculate training accuracy after each epoch
         train_accuracy = round(100 * correct_train / total_train, 2)
@@ -93,8 +101,7 @@ def evaluate_model(model, data_loader):
     total = 0
     with torch.no_grad():
         for data in data_loader:
-            inputs, labels = data["audio"].to(device), data["label"].to(device)
-            inputs, labels = data["audio"].to(device), data["label"].to(device)
+            inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -123,10 +130,11 @@ def main(args):
             "input_size": args.input_size,
             "hidden_size": args.hidden_size,
             "num_layers": args.num_layers,
-            "dropout": args.dropout,
+            # "dropout": args.dropout,
             "bidirectional": args.bidirectional,
+            "output_size": args.output_size,
         }
-        model_filename = f"{args.model_class}_hidden_size-{args.hidden_size}_layers-{args.num_layers}_dropout-{args.dropout}_bidirectional-{args.bidirectional}"
+        model_filename = f"{args.model_class}_hidden_size-{args.hidden_size}_layers-{args.num_layers}_bidirectional-{args.bidirectional}"
     else:
         raise ValueError("Unsupported model type")
     trained_model = train_model(model, model_params, train_loader, val_loader, model_filename)
@@ -165,8 +173,9 @@ if __name__ == "__main__":
     parser.add_argument("--n-decoder-layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--input-size", type=int, default=16000)
-    parser.add_argument("--hidden-size", type=int, default=256)
+    parser.add_argument("--hidden-size", type=int, default=128)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--bidirectional", type=bool, default=False)
+    parser.add_argument("--output-size", type=int, default=11)
     args = parser.parse_args()
     main(args)
