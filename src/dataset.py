@@ -40,6 +40,10 @@ def preprocess_wave(waveform: np.array, target_sr: int = 20, max_length: int = 3
     mean = torch_waveform.mean()
     std = torch_waveform.std()
     torch_waveform = (torch_waveform - mean) / std
+
+    # fill the waveform with zeros if it has nan values
+    if torch.isnan(torch_waveform).any():
+        torch_waveform = torch.nan_to_num(torch_waveform)
     
     return torch_waveform.view(-1)
 
