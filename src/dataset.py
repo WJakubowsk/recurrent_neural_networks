@@ -21,8 +21,8 @@ def preprocess_wave(waveform: np.array, target_sr: int = 20, max_length: int = 3
         Tensor: Preprocessed feature tensor.
     """
     # fill the waveform with zeros if it has nan values
-    if np.isnan(waveform).any():
-        waveform = np.nan_to_num(waveform)
+    missing_indices = np.isnan(waveform)
+    waveform[missing_indices] = 0
     
     # Perform MFCC feature extraction
     waveform_mfcc = librosa.feature.mfcc(y=waveform, sr=waveform.shape[0], n_mfcc=target_sr)
