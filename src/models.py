@@ -1,93 +1,38 @@
-import math
 import torch
-from torch import nn, Tensor
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch import nn
+import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Transformer(nn.Module):
-
-    def __init__(
-        self,
-        n_tokens: int,
-        d_model: int,
-        n_head: int,
-        d_hid: int,
-        n_layers: int,
-        dropout: float = 0.5,
-    ):
-        """
-        Arguments:
-            n_tokens: int, the size of the vocabulary - number of unique tokens in the input data
-            d_model: int, the number of expected features in the input
-            n_head: int, the number of heads in the multiheadattention models
-            d_hid: int, the dimension of the feedforward network model
-            n_layers: int, the number of sub-encoder-layers in the encoder
-            dropout: float, the dropout value
-        """
+    def __init__(self, input_size, n_head, num_encoder_layers, num_decoder_layers, dim_feedforward, dropout, num_classes):
         super().__init__()
-        self.model_type = "Transformer"
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = TransformerEncoderLayer(d_model, n_head, d_hid, dropout)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, n_layers)
-        self.embedding = nn.Embedding(n_tokens, d_model)
-        self.d_model = d_model
-        self.linear = nn.Linear(d_model, n_tokens)
+        self.input_size = input_size
+        self.n_head = n_head
+        self.num_encoder_layers = num_encoder_layers
+        self.num_decoder_layers = num_decoder_layers
+        self.dropout = dropout
+        self.transformer = nn.Transformer(d_model=input_size,
+                                         nhead=n_head,
+                                         num_encoder_layers=num_encoder_layers,
+                                         num_decoder_layers=num_decoder_layers,
+                                         dim_feedforward=dim_feedforward,
+                                         dropout=dropout)
+        self.fc1 = nn.Linear(self.input_size, 128)
+        self.fc2 = nn.Linear(128, num_classes)
 
-        self.init_weights()
-
-    def init_weights(self) -> None:
-        initrange = 0.1
-        self.embedding.weight.data.uniform_(-initrange, initrange)
-        self.linear.bias.data.zero_()
-        self.linear.weight.data.uniform_(-initrange, initrange)
-
-    def forward(self, src: Tensor, src_mask: Tensor = None) -> Tensor:
+    def forward(self, x):
         """
-        Arguments:
-            src: Tensor, shape ``[seq_len, batch_size]``
-            src_mask: Tensor, shape ``[seq_len, seq_len]``
-
-        Returns:
-            output Tensor of shape ``[seq_len, batch_size, n_tokens]``
+        Forward pass of the Transformer model.
         """
-        src = self.embedding(src) * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
-        if src_mask is None:
-            """Generate a square causal mask for the sequence. The masked positions are filled with float('-inf').
-            Unmasked positions are filled with float(0.0).
-            """
-            src_mask = nn.Transformer.generate_square_subsequent_mask(len(src)).to(
-                device
-            )
-        output = self.transformer_encoder(src, src_mask)
-        output = self.linear(output)
-        return output
-
-
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model)
-        )
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Arguments:
-            x: Tensor, shape ``[seq_len, batch_size, embedding_dim]``
-        """
-        x = x + self.pe[: x.size(0)]
-        return self.dropout(x)
+        x = self.transformer(x, x)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.fc2(x)
+        x = F.log_softmax(x, dim=1)
+        return x
+    
 
 
 class LSTM(nn.Module):
@@ -108,12 +53,6 @@ class LSTM(nn.Module):
                             dropout=dropout,
                             bidirectional=bidirectional,
                             batch_first=True)
-        
-    # def parameters(self):
-    #     """
-    #     Returns the parameters of the LSTM model.
-    #     """
-    #     return self.lstm.parameters()
 
     def forward(self, x):
         """

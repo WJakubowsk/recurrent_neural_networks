@@ -12,19 +12,25 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def load_data(version: str = "v0.01") -> tuple:
+def load_data(version: str = "v0.01", batch_size: int = 32, sampling_rate: int = 8000, max_length: int = 16000) -> tuple:
     """
     Load the dataset of the desired version and return the dataloaders for every split.
+    Args:
+        version (str): Version of the dataset.
+        batch_size (int): Batch size for the dataloaders.
+        sampling_rate (int): Sampling rate for the audio data.
     """
-    train, val, test = get_datasets(version)
-    train_dataloader = DataLoader(train, batch_size=32, shuffle=True)
-    val_dataloader = DataLoader(val, batch_size=32, shuffle=True)
-    test_dataloader = DataLoader(test, batch_size=32, shuffle=True)
+    print("loading data...")
+    train, val, test = get_datasets(version, sr=sampling_rate, max_length=max_length)
+    train_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True)
     return train_dataloader, val_dataloader, test_dataloader
 
 
 def train_model(model_class, model_params, train_loader, val_loader, model_filename):
-    # Train the model
+    torch.manual_seed(123)
+    print("training model...")
     # Initialize model, loss function, and optimizer
     model = model_class(**model_params)
     model.to(device)
@@ -36,15 +42,18 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     best_val_accuracy = 0.0
     for epoch in range(num_epochs):
         running_loss = 0.0
+        total_train = 0
+        correct_train = 0
         for i, data in enumerate(train_loader):
             inputs, labels = data["audio"].to(device), data["label"].to(device)
-            print("inputs", inputs.shape)
-            print("labels", labels.shape)
+            # print("inputs", inputs.shape)
+            # print("labels", labels.shape)
             optimizer.zero_grad()
             outputs = model.forward(inputs)
-            print("outputs", outputs.shape)
+            # print("outputs", outputs)
             loss = criterion(outputs, labels)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             running_loss += loss.item()
 
@@ -67,7 +76,7 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
 
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
-            save_model(model, "pretrained/" + model_filename + ".pth")
+            save_model(model, "./pretrained/" + model_filename + ".pth")
     return model
 
 
@@ -81,7 +90,7 @@ def evaluate_model(model, data_loader):
     total = 0
     with torch.no_grad():
         for data in data_loader:
-            inputs, labels = data
+            inputs, labels = data["audio"].to(device), data["label"].to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -90,19 +99,20 @@ def evaluate_model(model, data_loader):
 
 
 def main(args):
-    train_loader, val_loader, test_loader = load_data(args.version)
+    train_loader, val_loader, test_loader = load_data(args.version, args.batch_size, args.max_length, args.sampling_rate)
 
     if args.model_class == "Transformer":
         model = Transformer
         model_params = {
-            "n_tokens": args.n_tokens,
-            "d_model": args.d_model,
+            "input_size": args.max_length * args.sampling_rate,
+            "num_classes": args.output_size,
             "n_head": args.n_head,
-            "d_hid": args.d_hid,
-            "n_layers": args.n_layers,
+            "num_encoder_layers": args.n_encoder_layers,
+            "num_decoder_layers": args.n_decoder_layers,
+            "dim_feedforward": args.d_hid,
             "dropout": args.dropout,
         }
-        model_filename = f"{args.model_class}_n_tokens-{args.n_tokens}_d_model-{args.d_model}_n_head-{args.n_head}_d_hid-{args.d_hid}_n_layers-{args.n_layers}_dropout-{args.dropout}"
+        model_filename = f"{args.model_class}_input_size-{args.max_length * args.sampling_rate}_n_head-{args.n_head}_n_encoder_layers-{args.n_encoder_layers}_n_decoder_layers-{args.n_decoder_layers}_d_hid-{args.d_hid}_dropout-{args.dropout}"
     elif args.model_class == "LSTM":
         model = LSTM
         model_params = {
@@ -120,10 +130,10 @@ def main(args):
     print(f"Accuracy on test (%): {test_accuracy}")
 
     # get confusion matrix
-    confusion_matrix = torch.zeros(args.n_tokens, args.n_tokens)
+    confusion_matrix = torch.zeros(args.output_size, args.output_size)
     with torch.no_grad():
         for data in test_loader:
-            inputs, labels = data
+            inputs, labels = data["audio"].to(device), data["label"].to(device)
             outputs = trained_model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             for t, p in zip(labels.view(-1), predicted.view(-1)):
@@ -134,20 +144,23 @@ def main(args):
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
     plt.savefig(f"results/{model_filename}.png")
-    plt.show()
+    # plt.show()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-class", type=str, choices=["Transformer", "LSTM"], default="Transformer")
     parser.add_argument("--version", type=str, default="v0.01")
-    parser.add_argument("--n-tokens", type=int, default=10)
-    parser.add_argument("--d-model", type=int, default=512)
-    parser.add_argument("--n-head", type=int, default=8)
-    parser.add_argument("--d-hid", type=int, default=2048)
-    parser.add_argument("--n-layers", type=int, default=6)
+    parser.add_argument("--sampling-rate", type=int, default=20)
+    parser.add_argument("--max-length", type=int, default=16)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--n-head", type=int, default=2)
+    parser.add_argument("--output-size", type=int, default=12)
+    parser.add_argument("--d-hid", type=int, default=128)
+    parser.add_argument("--n-encoder-layers", type=int, default=2)
+    parser.add_argument("--n-decoder-layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--input-size", type=int, default=128)
+    parser.add_argument("--input-size", type=int, default=16000)
     parser.add_argument("--hidden-size", type=int, default=256)
     parser.add_argument("--num-layers", type=int, default=2)
     parser.add_argument("--bidirectional", type=bool, default=True)
