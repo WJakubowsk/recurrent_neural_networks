@@ -4,6 +4,7 @@ import argparse
 import torch
 from datasets import load_dataset
 import librosa
+from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -40,19 +41,12 @@ def preprocess_wave(waveform: np.array, target_sr: int = 20, max_length: int = 3
     mean = torch_waveform.mean()
     std = torch_waveform.std()
     torch_waveform = (torch_waveform - mean) / std
-
-    # fill the waveform with zeros if it has nan values
-    if torch.isnan(torch_waveform).any():
-        torch_waveform = torch.nan_to_num(torch_waveform)
     
     return torch_waveform.view(-1)
 
 def get_datasets(version: str = "v0.01", sr: int = 8000, max_length: int = 16000):
     """
     Unpacks the dataset into train, validation, and test splits of desired version.
-    Args:
-        version (str): Version of the dataset.
-        sr (int): Target sampling rate for the audio.
     """
     dataset = load_dataset("speech_commands", version)
     train_dataset = dataset["train"]
@@ -62,6 +56,72 @@ def get_datasets(version: str = "v0.01", sr: int = 8000, max_length: int = 16000
     new_datasets = []
     for dataset in datasets:
         dataset = dataset.map(lambda x: {"audio": preprocess_wave(x["audio"]['array'], target_sr=sr, max_length=max_length), "label": x["label"] if x["label"] < 10 else 11 if x["label"] == 30 else 10})
+        dataset.set_format(type="torch", columns=["audio", "label"])
+        new_datasets.append(dataset)
+    return new_datasets
+
+def get_silence_datasets(sr: int = 8000, max_length: int = 16000, clip_duration: int = 1):
+    """
+    Maps the dataset labels into silence vs non-silence and cuts the labeled clips into smaller clips.
+    """
+    dataset = load_dataset("speech_commands", "v0.01")
+    train_dataset = dataset["train"]
+    val_dataset = dataset["validation"]
+    test_dataset = dataset["test"]
+    datasets = [train_dataset, val_dataset, test_dataset]
+    new_datasets = []
+    
+    for dataset in datasets:
+        new_dataset = []
+        for sample in tqdm(dataset):
+            audio = preprocess_wave(sample["audio"]['array'], target_sr=sr, max_length=max_length)
+            label = 1 if sample["label"] == 30 else 0
+            
+            if label == 1 and dataset == train_dataset:
+                # Cut the audio into smaller clips
+                for start in range(0, len(audio), clip_duration):
+                    end = min(start + clip_duration * sr, len(audio))
+                    new_audio = audio[start:end]
+                    new_dataset.append({"audio": new_audio, "label": label})
+            else:
+                new_dataset.append({"audio": audio, "label": label})
+                
+        new_datasets.append(new_dataset)
+    
+    return new_datasets
+
+
+
+def get_unknown_datasets(sr: int = 8000, max_length: int = 16000):
+    """
+    Maps the dataset labels into unknown vs known.
+    """
+    dataset = load_dataset("speech_commands", "v0.01")
+    train_dataset = dataset["train"]
+    val_dataset = dataset["validation"]
+    test_dataset = dataset["test"]
+    datasets = [train_dataset, val_dataset, test_dataset]
+    new_datasets = []
+    for dataset in datasets:
+        dataset = dataset.map(lambda x: {"audio": preprocess_wave(x["audio"]['array'], target_sr=sr, max_length=max_length), "label": 0 if x["label"] < 10 or x["label"] == 30 else 1})
+        dataset.set_format(type="torch", columns=["audio", "label"])
+        new_datasets.append(dataset)
+    return new_datasets
+
+def get_main_task_datasets(sr: int = 8000, max_length: int = 16000):
+    """
+    Maps the dataset labels into the main task classes (only 0-9 labels). Filter out silence and unknown classes.
+    """
+    dataset = load_dataset("speech_commands", "v0.01")
+    train_dataset = dataset["train"]
+    val_dataset = dataset["validation"]
+    test_dataset = dataset["test"]
+    datasets = [train_dataset, val_dataset, test_dataset]
+    new_datasets = []
+    for dataset in datasets:
+        dataset = dataset.map(lambda x: {"audio": preprocess_wave(x["audio"]['array'], target_sr=sr, max_length=max_length), "label": x["label"] if x["label"] < 10 else 10})
+        # drop silence and unknown classes
+        dataset = dataset.filter(lambda x: x["label"] < 10)
         dataset.set_format(type="torch", columns=["audio", "label"])
         new_datasets.append(dataset)
     return new_datasets

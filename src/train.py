@@ -30,7 +30,7 @@ def load_data(version: str = "v0.01", batch_size: int = 32, sampling_rate: int =
     return train_dataloader, val_dataloader, test_dataloader
 
 
-def train_model(model_class, model_params, train_loader, val_loader, model_filename):
+def train_model(model_class, model_params, train_loader, val_loader, model_filename, num_epochs=10):
     torch.manual_seed(123)
     print("training model...")
     # Initialize model, loss function, and optimizer
@@ -40,7 +40,6 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     # Training loop
-    num_epochs = 10
     best_val_accuracy = 0.0
     for epoch in range(num_epochs):
         running_loss = 0.0
@@ -49,13 +48,13 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
         total_train = 0
         correct_train = 0
         for i, data in enumerate(train_loader):
-            inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
+            if args.model_class == "Transformer":
+                inputs, labels = data["audio"].to(device), data["label"].to(device)
+            else:
+                inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
 
-            # print("inputs", inputs.shape)
-            # print("labels", labels.shape)
             optimizer.zero_grad()
             outputs = model.forward(inputs)
-            # print("outputs", outputs.shape)
             loss = criterion(outputs, labels)
             loss.backward()
             
@@ -81,10 +80,16 @@ def train_model(model_class, model_params, train_loader, val_loader, model_filen
         # Calculate training accuracy after each epoch
         train_accuracy = round(100 * correct_train / total_train, 2)
         print(f"Accuracy on train (%) after epoch {epoch + 1}: {train_accuracy}")
+        # save train accuracy to txt file
+        with open(f"results/{model_filename}_train_accuracy.txt", "a") as f:
+            f.write(f"{train_accuracy}\n")
 
         # Evaluate on validation set
         val_accuracy = round(evaluate_model(model, val_loader) * 100, 2)
         print(f"Accuracy on validation (%) after epoch {epoch + 1}: {val_accuracy}")
+        # save val accuracy to txt file
+        with open(f"results/{model_filename}_val_accuracy.txt", "a") as f:
+            f.write(f"{val_accuracy}\n")
 
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
@@ -101,7 +106,10 @@ def evaluate_model(model, data_loader):
     total = 0
     with torch.no_grad():
         for data in data_loader:
-            inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
+            if args.model_class == "Transformer":
+                inputs, labels = data["audio"].to(device), data["label"].to(device)
+            else:
+                inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -127,17 +135,17 @@ def main(args):
     elif args.model_class == "LSTM":
         model = LSTM
         model_params = {
-            "input_size": args.input_size,
+            "input_size": args.max_length * args.sampling_rate,
             "hidden_size": args.hidden_size,
             "num_layers": args.num_layers,
             # "dropout": args.dropout,
             "bidirectional": args.bidirectional,
             "output_size": args.output_size,
         }
-        model_filename = f"{args.model_class}_hidden_size-{args.hidden_size}_layers-{args.num_layers}_bidirectional-{args.bidirectional}"
+        model_filename = f"{args.model_class}_input_size-{args.max_length * args.sampling_rate}_hidden_size-{args.hidden_size}_layers-{args.num_layers}_bidirectional-{args.bidirectional}"
     else:
         raise ValueError("Unsupported model type")
-    trained_model = train_model(model, model_params, train_loader, val_loader, model_filename)
+    trained_model = train_model(model, model_params, train_loader, val_loader, model_filename, args.num_epochs)
     test_accuracy = round(evaluate_model(trained_model, test_loader) * 100, 2)
     print(f"Accuracy on test (%): {test_accuracy}")
 
@@ -145,7 +153,10 @@ def main(args):
     confusion_matrix = torch.zeros(args.output_size, args.output_size)
     with torch.no_grad():
         for data in test_loader:
-            inputs, labels = data["audio"].to(device), data["label"].to(device)
+            if args.model_class == "Transformer":
+                inputs, labels = data["audio"].to(device), data["label"].to(device)
+            else:
+                inputs, labels = data["audio"].unsqueeze(1).to(device), data["label"].to(device)    
             outputs = trained_model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             for t, p in zip(labels.view(-1), predicted.view(-1)):
@@ -161,21 +172,20 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--num-epochs", type=int, default=50)
     parser.add_argument("--model-class", type=str, choices=["Transformer", "LSTM"], default="Transformer")
     parser.add_argument("--version", type=str, default="v0.01")
     parser.add_argument("--sampling-rate", type=int, default=20)
     parser.add_argument("--max-length", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--n-head", type=int, default=2)
+    parser.add_argument("--n-head", type=int, default=4)
     parser.add_argument("--output-size", type=int, default=12)
     parser.add_argument("--d-hid", type=int, default=128)
-    parser.add_argument("--n-encoder-layers", type=int, default=2)
-    parser.add_argument("--n-decoder-layers", type=int, default=2)
+    parser.add_argument("--n-encoder-layers", type=int, default=4)
+    parser.add_argument("--n-decoder-layers", type=int, default=4)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--input-size", type=int, default=16000)
     parser.add_argument("--hidden-size", type=int, default=128)
     parser.add_argument("--num-layers", type=int, default=2)
-    parser.add_argument("--bidirectional", type=bool, default=False)
-    parser.add_argument("--output-size", type=int, default=11)
+    parser.add_argument("--bidirectional", type=bool, default=True)
     args = parser.parse_args()
     main(args)

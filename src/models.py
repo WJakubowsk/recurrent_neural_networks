@@ -1,9 +1,6 @@
 import torch
-from torch import nn, Tensor
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch import nn
 from torch.nn import functional as F
-from torch.nn.utils.rnn import pack_padded_sequence
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -70,12 +67,7 @@ class LSTM(nn.Module):
         x = self.fc(h_n[-1])
         x = self.relu(x)
         x = self.label(x)
-        return x
-
-
-        # return self.label(h_n[-1])
-    
-        
+        return x        
         
 
         
