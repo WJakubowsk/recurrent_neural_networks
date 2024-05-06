@@ -18,6 +18,6 @@ Download the dataset and place it in the *data/* dir in the root of the project.
 
 To obtain the results, simply run one of the following Python scripts:
 * `python train.py` - specify the variant of the architecture by providing model class ("LSTM", "Transformer") and parameters,
-* `python train_separate` - as above, but use this for preparing committee models for ensemble model,
+* `python train_separate.py` - as above, but use this for preparing committee models for ensemble model,
 * `python ensemble.py` - make prediction on the ensemble of three separate DL architectures: for silence detection, for unknown sound detection, and for main classess classification (sequencial model).
 
